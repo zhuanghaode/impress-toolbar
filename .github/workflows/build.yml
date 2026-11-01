@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2019
+    runs-on: windows-2022
     timeout-minutes: 350
 
     steps:
@@ -77,6 +77,16 @@ jobs:
           Get-ChildItem $dir | Select-Object Name
           "PKGCONF_DIR=$dir" | Out-File -FilePath $env:GITHUB_ENV -Append
 
+      - name: Diagnose MSVC and SDK
+        shell: pwsh
+        run: |
+          Write-Host "=== MSVC toolsets ==="
+          Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC" -Directory -ErrorAction SilentlyContinue | Select-Object FullName
+          Write-Host "=== Windows SDKs ==="
+          Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Include" -Directory -ErrorAction SilentlyContinue | Select-Object Name
+          Write-Host "=== cl.exe locations ==="
+          Get-ChildItem "C:\Program Files\Microsoft Visual Studio\2022" -Recurse -Filter cl.exe -ErrorAction SilentlyContinue | Select-Object -First 5 FullName
+
       - name: Configure
         shell: pwsh
         timeout-minutes: 40
@@ -91,7 +101,7 @@ jobs:
           Copy-Item (Join-Path $pkgWin "*.dll") C:\pk\ -Force -ErrorAction SilentlyContinue
           Get-ChildItem C:\pk | Select-Object Name
           $cfg = @(
-            "--with-visual-studio=2019",
+            "--with-visual-studio=2022",
             "--without-java",
             "--without-doxygen",
             "--without-help",
