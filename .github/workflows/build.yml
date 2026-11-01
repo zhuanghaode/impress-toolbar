@@ -81,14 +81,18 @@ jobs:
         shell: pwsh
         timeout-minutes: 40
         run: |
-          $pkgDir = & bash -lc "cygpath -u '$env:PKGCONF_DIR'"
-          $env:PATH = "$($env:PKGCONF_DIR);C:\cygwin\bin;$env:PATH"
-          & bash -lc "set -e; export PATH='$pkgDir:/usr/bin:/bin'; cd /cygdrive/d/lo; { echo '--with-visual-studio=2022'; echo '--without-java'; echo '--without-doxygen'; echo '--without-help'; echo '--disable-epm'; echo '--disable-odk'; echo '--with-parallelism=8'; } > autogen.input; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE"
+          $pkgWin = $env:PKGCONF_DIR
+          $pkgCyg = & bash -lc "cygpath -u \"$pkgWin\""
+          $env:PATH = "$pkgWin;C:\cygwin\bin;$env:PATH"
+          Write-Host "pkgconf dir: $pkgWin -> $pkgCyg"
+          $cfg = @("--with-visual-studio=2022","--without-java","--without-doxygen","--without-help","--disable-epm","--disable-odk","--with-parallelism=8")
+          $cfg -join "`n" | Out-File -FilePath D:\lo\autogen.input -Encoding utf8
+          & bash -lc "set -e; export PATH=\"$pkgCyg:/usr/bin:/bin\"; cd /cygdrive/d/lo; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE"
           if (-not (Test-Path "D:\lo\config_host.mk")) {
-            Write-Host "=== configure 未生成 config_host.mk ==="; Get-Content "D:\lo\config.log" -Tail 60 -ErrorAction SilentlyContinue; throw "configure failed"
+            Get-Content "D:\lo\config.log" -Tail 60 -ErrorAction SilentlyContinue
+            throw "configure failed"
           }
           Write-Host "configure OK"
-
       - name: Build
         shell: pwsh
         timeout-minutes: 280
