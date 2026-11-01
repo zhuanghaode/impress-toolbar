@@ -1,13 +1,5 @@
 name: Build Impress with Toolbar (Windows x64)
 
-# 在 GitHub 免费 Windows 虚拟机上：
-#   1. 拉取官方 LibreOffice 源码
-#   2. 应用工具栏补丁
-#   3. 编译出 Windows 版
-#   4. 打包上传，供下载安装
-#
-# 手动触发：仓库页面 -> Actions -> 选中本 workflow -> Run workflow
-
 on:
   workflow_dispatch:
   push:
@@ -16,100 +8,85 @@ on:
 jobs:
   build:
     runs-on: windows-2022
-    timeout-minutes: 350          # GitHub 单任务 6 小时上限内
+    timeout-minutes: 350
 
     steps:
-      - name: 检出（本仓库只放补丁和脚本）
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 显示环境信息
-        shell: bash
-        run: |
-          echo "CPU: $NUMBER_OF_PROCESSORS"
-          df -h
-          echo "VS:"
-          ls "/c/Program Files/Microsoft Visual Studio/" || true
-
-      # ---------- 准备工具链 ----------
-      - name: 安装 Cygwin 及编译依赖
+      - name: Show environment
         shell: pwsh
-        timeout-minutes: 30
         run: |
-          $url = "https://cygwin.com/setup-x86_64.exe"
-          Invoke-WebRequest -Uri $url -OutFile "$env:RUNNER_TEMP\setup-x86_64.exe"
-          $packages = @(
+          Write-Host "CPUs: $env:NUMBER_OF_PROCESSORS"
+          Get-PSDrive C | Select-Object Used,Free
+          Get-ChildItem "C:\Program Files\Microsoft Visual Studio" -ErrorAction SilentlyContinue | Select-Object Name
+
+      - name: Install Cygwin and build deps
+        shell: pwsh
+        timeout-minutes: 40
+        run: |
+          $setup = "$env:RUNNER_TEMP\setup-x86_64.exe"
+          Invoke-WebRequest -Uri "https://cygwin.com/setup-x86_64.exe" -OutFile $setup -UseBasicParsing
+          $pkgs = @(
             "autoconf","automake","bison","cabextract","doxygen","flex","gcc-g++",
             "gettext-devel","git","gnupg","gperf","make","mintty","nasm","openssh",
-            "openssl","patch","perl","python","python3","pkg-config","rsync",
-            "unzip","vim","wget","zip","perl-Archive-Zip","perl-Font-TTF",
-            "perl-IO-String","perl-XML-Parser","libxml2","libxslt","curl"
-          )
-          $args = @("-q","-n","-d","-R","$env:RUNNER_TEMP\cygwin","-s",
-                    "https://mirrors.kernel.org/sourceware/cygwin/",
-                    "-P", ($packages -join ","))
-          & "$env:RUNNER_TEMP\setup-x86_64.exe" @args
-          Write-Host "Cygwin 安装完成"
+            "openssl","patch","perl","python3","pkg-config","rsync","unzip","vim",
+            "wget","zip","perl-Archive-Zip","perl-Font-TTF","perl-IO-String",
+            "perl-XML-Parser","libxml2","libxslt","curl"
+          ) -join ","
+          $p = Start-Process -FilePath $setup -ArgumentList @(
+            "-q","-n","-d","-R","C:\cygwin","-s","https://mirrors.kernel.org/sourceware/cygwin/",
+            "-P",$pkgs
+          ) -Wait -PassThru -NoNewWindow
+          Write-Host "Cygwin setup exit code: $($p.ExitCode)"
+          if (-not (Test-Path "C:\cygwin\bin\bash.exe")) { throw "Cygwin install failed" }
+          Write-Host "Cygwin OK"
 
-      # ---------- 获取源码 ----------
-      - name: 克隆 LibreOffice 源码（26-8 分支）
-        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail {0}
-        timeout-minutes: 60
+      - name: Clone LibreOffice source
+        shell: pwsh
+        timeout-minutes: 90
         run: |
-          cd /cygdrive/d
-          git clone --depth 1 --branch libreoffice-26-8 \
-            https://github.com/LibreOffice/core.git lo
-          echo "源码已克隆"
-          du -sh lo
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          bash -lc "set -e; cd /cygdrive/d; git clone --depth 1 --branch libreoffice-26-8 https://github.com/LibreOffice/core.git lo; echo CLONE_DONE; du -sh lo"
 
-      - name: 应用工具栏补丁
-        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail {0}
+      - name: Apply toolbar patch
+        shell: pwsh
         run: |
-          cd /cygdrive/d/lo
-          git apply --stat "$GITHUB_WORKSPACE/impress-toolbar.patch"
-          git apply "$GITHUB_WORKSPACE/impress-toolbar.patch"
-          echo "补丁应用成功"
-          ls -la sd/source/ui/slideshow/showtoolbar.*
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          $ws = & bash -lc "cygpath -u '$env:GITHUB_WORKSPACE'"
+          & bash -lc "set -e; cd /cygdrive/d/lo; git apply --stat '$ws/impress-toolbar.patch'; git apply '$ws/impress-toolbar.patch'; echo PATCH_OK; ls -la sd/source/ui/slideshow/showtoolbar.*"
 
-      - name: 配置构建
-        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail {0}
-        timeout-minutes: 30
+      - name: Configure
+        shell: pwsh
+        timeout-minutes: 40
         run: |
-          cd /cygdrive/d/lo
-          cat > autogen.input <<'EOF'
-          --with-visual-studio=2022
-          --without-java
-          --without-doxygen
-          --without-help
-          --with-parallelism=8
-          --disable-epm
-          --disable-odk
-          EOF
-          ./autogen.sh 2>&1 | tail -40
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          & bash -lc "set -e; cd /cygdrive/d/lo; { echo '--with-visual-studio=2022'; echo '--without-java'; echo '--without-doxygen'; echo '--without-help'; echo '--disable-epm'; echo '--disable-odk'; echo '--with-parallelism=8'; } > autogen.input; cat autogen.input; ./autogen.sh 2>&1 | tail -50; echo CONFIG_DONE"
 
-      # ---------- 编译 ----------
-      - name: 编译（仅编译到可用，不跑测试）
-        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail {0}
+      - name: Build
+        shell: pwsh
         timeout-minutes: 280
         run: |
-          cd /cygdrive/d/lo
-          make -j8 2>&1 | tail -60
-          echo "=== 编译完成 ==="
-          ls -la instdir/program/soffice.exe 2>/dev/null || ls instdir/program/ | head
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          & bash -lc "cd /cygdrive/d/lo; make -j8 2>&1 | tail -80; echo MAKE_ATTEMPT_DONE"
 
-      # ---------- 打包 ----------
-      - name: 打包绿色版
-        shell: C:\cygwin\bin\bash.exe --noprofile --norc -eo pipefail {0}
+      - name: Check output
+        if: always()
+        shell: pwsh
         run: |
-          cd /cygdrive/d/lo
-          if [ -d instdir ]; then
-            tar -czf "$GITHUB_WORKSPACE/libreoffice-impress-toolbar.zip" instdir
-            du -sh "$GITHUB_WORKSPACE/libreoffice-impress-toolbar.zip"
-          else
-            echo "没有 instdir，构建失败"
-            exit 1
-          fi
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          & bash -lc "cd /cygdrive/d/lo; if [ -f instdir/program/soffice.exe ]; then echo SOFFICE_EXISTS; else echo SOFFICE_MISSING; fi; ls instdir/program 2>/dev/null | head -20"
 
-      - name: 上传产物
+      - name: Package
+        if: success()
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\cygwin\bin;$env:PATH"
+          $ws = & bash -lc "cygpath -u '$env:GITHUB_WORKSPACE'"
+          & bash -lc "set -e; cd /cygdrive/d/lo; tar -czf '$ws/libreoffice-impress-toolbar.zip' instdir; du -sh '$ws/libreoffice-impress-toolbar.zip'"
+
+      - name: Upload artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: libreoffice-impress-toolbar-win64
