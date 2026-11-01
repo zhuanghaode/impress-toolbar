@@ -7,7 +7,7 @@ on:
 
 jobs:
   build:
-    runs-on: windows-2022
+    runs-on: windows-2019
     timeout-minutes: 350
 
     steps:
@@ -91,7 +91,7 @@ jobs:
           Copy-Item (Join-Path $pkgWin "*.dll") C:\pk\ -Force -ErrorAction SilentlyContinue
           Get-ChildItem C:\pk | Select-Object Name
           $cfg = @(
-            "--with-visual-studio=2022",
+            "--with-visual-studio=2019",
             "--without-java",
             "--without-doxygen",
             "--without-help",
@@ -113,14 +113,16 @@ jobs:
         timeout-minutes: 280
         run: |
           $env:PATH = "C:\cygwin\bin;$env:PATH"
-          & bash -lc "cd /cygdrive/d/lo; if [ ! -f config_host.mk ]; then echo CONFIG_MISSING; exit 1; fi; make -j8 2>&1 | tail -80; echo MAKE_ATTEMPT_DONE"
+          & bash -lc "cd /cygdrive/d/lo; if [ ! -f config_host.mk ]; then echo CONFIG_MISSING; exit 1; fi; make -j8 > build.log 2>&1; rc=$?; tail -100 build.log; echo MAKE_EXIT=$rc; exit $rc"
+          if ($LASTEXITCODE -ne 0) { Write-Host "BUILD FAILED"; exit 1 }
+          Write-Host "BUILD OK"
 
       - name: Check output
         if: always()
         shell: pwsh
         run: |
           $env:PATH = "C:\cygwin\bin;$env:PATH"
-          & bash -lc "cd /cygdrive/d/lo; if [ -f instdir/program/soffice.exe ]; then echo SOFFICE_EXISTS; else echo SOFFICE_MISSING; fi; ls instdir/program 2>/dev/null | head -20"
+          & bash -lc "cd /cygdrive/d/lo; echo '--- program 目录文件数 ---'; ls instdir/program 2>/dev/null | wc -l; echo '--- 关键文件 ---'; for f in soffice.bin sdlo.dll; do if [ -f instdir/program/$f ]; then echo HAVE_$f; else echo MISS_$f; fi; done"
 
       - name: Package
         if: success()
