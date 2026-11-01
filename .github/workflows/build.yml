@@ -30,7 +30,7 @@ jobs:
           $pkgs = @(
             "autoconf","automake","bison","cabextract","doxygen","flex","gcc-g++",
             "gettext-devel","git","gnupg","gperf","make","mintty","nasm","openssh",
-            "openssl","patch","perl","python3","pkg-config","rsync","unzip","vim",
+            "openssl","patch","perl","python3","pkg-config","pkgconf","rsync","unzip","vim",
             "wget","zip","perl-Archive-Zip","perl-Font-TTF","perl-IO-String",
             "perl-XML-Parser","libxml2","libxslt","curl"
           ) -join ","
@@ -57,19 +57,37 @@ jobs:
           & bash -lc "cd /cygdrive/d/lo; python3 '$ws/apply_patch.py' /cygdrive/d/lo; echo PATCH_RESULT=$?; ls -la sd/source/ui/slideshow/showtoolbar.*"
           if ($LASTEXITCODE -ne 0) { throw "patch failed" }
 
+      - name: Install pkgconf
+        shell: pwsh
+        run: |
+          # LibreOffice 需要 Windows 版 pkgconf 来编译 harfbuzz
+          New-Item -ItemType Directory -Force -Path C:\tools | Out-Null
+          $zip = "$env:RUNNER_TEMP\pkgconf.zip"
+          Invoke-WebRequest -Uri "https://download.gnome.org/binaries/win64/pkgconf/2.4/pkgconf-2.4.3-x86_64-w64-mingw32.zip" -OutFile $zip -UseBasicParsing
+          Expand-Archive -Path $zip -DestinationPath C:\tools -Force
+          Get-ChildItem C:\tools -Recurse -Filter "pkgconf.exe" | Select-Object FullName
+          $exe = (Get-ChildItem C:\tools -Recurse -Filter "pkgconf.exe" | Select-Object -First 1).FullName
+          if (-not $exe) { throw "pkgconf not found" }
+          Write-Host "pkgconf: $exe"
+          "PKGCONF_EXE=$exe" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Configure
         shell: pwsh
         timeout-minutes: 40
         run: |
           $env:PATH = "C:\cygwin\bin;$env:PATH"
-          & bash -lc "set -e; cd /cygdrive/d/lo; { echo '--with-visual-studio=2022'; echo '--without-java'; echo '--without-doxygen'; echo '--without-help'; echo '--disable-epm'; echo '--disable-odk'; echo '--with-parallelism=8'; } > autogen.input; cat autogen.input; ./autogen.sh 2>&1 | tail -50; echo CONFIG_DONE"
+          $pkgconf = & bash -lc "cygpath -m '$env:PKGCONF_EXE'"
+          Write-Host "using pkgconf: $pkgconf"
+          & bash -lc "set -e; cd /cygdrive/d/lo; { echo '--with-visual-studio=2022'; echo '--without-java'; echo '--without-doxygen'; echo '--without-help'; echo '--disable-epm'; echo '--disable-odk'; echo '--with-parallelism=8'; echo 'PKG_CONFIG=$pkgconf'; } > autogen.input; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE"
+          if (Select-String -Path "D:\lo\config.log" -Pattern "error:" -Quiet -ErrorAction SilentlyContinue) { Write-Host "configure had errors" }
+          if (-not (Test-Path "D:\lo\config_host.mk")) { throw "configure did not produce config_host.mk" }
 
       - name: Build
         shell: pwsh
         timeout-minutes: 280
         run: |
           $env:PATH = "C:\cygwin\bin;$env:PATH"
-          & bash -lc "cd /cygdrive/d/lo; make -j8 2>&1 | tail -80; echo MAKE_ATTEMPT_DONE"
+          & bash -lc "cd /cygdrive/d/lo; if [ ! -f config_host.mk ]; then echo CONFIG_MISSING; exit 1; fi; make -j8 2>&1 | tail -80; echo MAKE_ATTEMPT_DONE"
 
       - name: Check output
         if: always()
