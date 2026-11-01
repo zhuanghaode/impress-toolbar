@@ -87,7 +87,8 @@ jobs:
           Write-Host "pkgconf dir: $pkgWin -> $pkgCyg"
           $cfg = @("--with-visual-studio=2022","--without-java","--without-doxygen","--without-help","--disable-epm","--disable-odk","--with-parallelism=8")
           $cfg -join "`n" | Out-File -FilePath D:\lo\autogen.input -Encoding utf8
-          & bash -lc "set -e; export PATH=\"$pkgCyg:/usr/bin:/bin\"; cd /cygdrive/d/lo; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE"
+          $env:PKG_CYG = $pkgCyg
+          & bash -lc 'set -e; export PATH="${PKG_CYG}:/usr/bin:/bin"; cd /cygdrive/d/lo; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE' 
           if (-not (Test-Path "D:\lo\config_host.mk")) {
             Get-Content "D:\lo\config.log" -Tail 60 -ErrorAction SilentlyContinue
             throw "configure failed"
