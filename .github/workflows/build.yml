@@ -84,8 +84,10 @@ jobs:
           $pkgDir = & bash -lc "cygpath -u '$env:PKGCONF_DIR'"
           $env:PATH = "$($env:PKGCONF_DIR);C:\cygwin\bin;$env:PATH"
           & bash -lc "set -e; export PATH='$pkgDir:/usr/bin:/bin'; cd /cygdrive/d/lo; { echo '--with-visual-studio=2022'; echo '--without-java'; echo '--without-doxygen'; echo '--without-help'; echo '--disable-epm'; echo '--disable-odk'; echo '--with-parallelism=8'; } > autogen.input; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE"
-          if (Select-String -Path "D:\lo\config.log" -Pattern "error:" -Quiet -ErrorAction SilentlyContinue) { Write-Host "configure had errors" }
-          if (-not (Test-Path "D:\lo\config_host.mk")) { throw "configure did not produce config_host.mk" }
+          if (-not (Test-Path "D:\lo\config_host.mk")) {
+            Write-Host "=== configure 未生成 config_host.mk ==="; Get-Content "D:\lo\config.log" -Tail 60 -ErrorAction SilentlyContinue; throw "configure failed"
+          }
+          Write-Host "configure OK"
 
       - name: Build
         shell: pwsh
