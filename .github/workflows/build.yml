@@ -54,7 +54,8 @@ jobs:
         run: |
           $env:PATH = "C:\cygwin\bin;$env:PATH"
           $ws = & bash -lc "cygpath -u '$env:GITHUB_WORKSPACE'"
-          & bash -lc "set -e; cd /cygdrive/d/lo; git apply --stat '$ws/impress-toolbar.patch'; git apply '$ws/impress-toolbar.patch'; echo PATCH_OK; ls -la sd/source/ui/slideshow/showtoolbar.*"
+          & bash -lc "cd /cygdrive/d/lo; python3 '$ws/apply_patch.py' /cygdrive/d/lo; echo PATCH_RESULT=$?; ls -la sd/source/ui/slideshow/showtoolbar.*"
+          if ($LASTEXITCODE -ne 0) { throw "patch failed" }
 
       - name: Configure
         shell: pwsh
