@@ -82,13 +82,26 @@ jobs:
         timeout-minutes: 40
         run: |
           $pkgWin = $env:PKGCONF_DIR
-          $pkgCyg = & bash -lc "cygpath -u \"$pkgWin\""
-          $env:PATH = "$pkgWin;C:\cygwin\bin;$env:PATH"
-          Write-Host "pkgconf dir: $pkgWin -> $pkgCyg"
-          $cfg = @("--with-visual-studio=2022","--without-java","--without-doxygen","--without-help","--disable-epm","--disable-odk","--with-parallelism=8")
+          $pkgExe = Join-Path $pkgWin "pkgconf-2.4.3.exe"
+          if (-not (Test-Path $pkgExe)) { throw "pkgconf-2.4.3.exe missing" }
+          Write-Host "pkgconf: $pkgExe"
+          # 直接把这个 exe 拷到无空格的目录，规避路径空格问题
+          New-Item -ItemType Directory -Force -Path C:\pk | Out-Null
+          Copy-Item $pkgExe C:\pk\pkgconf-2.4.3.exe -Force
+          Copy-Item (Join-Path $pkgWin "*.dll") C:\pk\ -Force -ErrorAction SilentlyContinue
+          Get-ChildItem C:\pk | Select-Object Name
+          $cfg = @(
+            "--with-visual-studio=2022",
+            "--without-java",
+            "--without-doxygen",
+            "--without-help",
+            "--disable-epm",
+            "--disable-odk",
+            "--with-parallelism=8",
+            "PKG_CONFIG=C:/pk/pkgconf-2.4.3.exe"
+          )
           $cfg -join "`n" | Out-File -FilePath D:\lo\autogen.input -Encoding utf8
-          $env:PKG_CYG = $pkgCyg
-          & bash -lc 'set -e; export PATH="${PKG_CYG}:/usr/bin:/bin"; cd /cygdrive/d/lo; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE' 
+          & bash -lc "set -e; cd /cygdrive/d/lo; cat autogen.input; ./autogen.sh 2>&1 | tail -60; echo CONFIG_DONE" 
           if (-not (Test-Path "D:\lo\config_host.mk")) {
             Get-Content "D:\lo\config.log" -Tail 60 -ErrorAction SilentlyContinue
             throw "configure failed"
